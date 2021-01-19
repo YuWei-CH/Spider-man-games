@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html>
+
+	<head>
+		<meta charset="utf-8" />
+		<title></title>
+		<style>
+			* {
+				margin: 0;
+			}
+		</style>
+		<script src="js/phaser.min.js"></script>
+	</head>
+
+	<body>
+		<script>
+			//定义游戏相关的配置对象
+			var config = {
+				//设定渲染模式，可以选CANVAS,WEBGL,或者AUTO
+				type: Phaser.AUTO,
+				//设定场景的大小
+				width: 1600,
+				height: 750,
+				//设定场景中的物理系统
+				physics: {
+					//默认使用arcade物理系统，
+					default: 'arcade',
+					//配置arcade物理系统的细节
+					arcade: {
+						//垂直方向的重力
+						gravity: {
+							y: 300
+						},
+						debug: false
+					}
+				},
+				//场景关键功能定义
+				scene: {
+					//资源预加载，调用preload函数
+					preload: preload,
+					//场景中对象的创建，事件的响应，动画的设定等等调用create函数
+					create: create,
+					//游戏循环中要定义的逻辑写在update中
+					update: update
+				}
+			};
+
+			/*******************************************
+			 * 声明全局变量（可以被当前脚本中的所有函数访问）
+			 *******************************************/
+			var player //声明玩家变量
+			var direction = 'right' //声明方向变量用于存储玩家行进的方向
+			var platforms //声明玩家可站立的平台变量
+			var cursors //声明四方向按键组
+			var keySpace //添加空格键
+			var score = 0 //声明游戏分数
+			var life = 3 //生命值 
+			var scoreText //声明抬头显分数文字
+			var lifeText //抬头显生命值文字
+			var monsters //声明骷髅敌人
+			var bullet //声明子弹
+			var gameOver = false //声明游戏状态
+
+			//通过我们定义的游戏设置创建一个游戏对象
+			var game = new Phaser.Game(config)
+			/*****************************************************
+			 *		用于给场景(scene)加载资源的 proload函数
+			 *****************************************************/
+			function preload() {
+				//加载图片资源，第一个参数是给资源设置的名称映射，第二个参数是资源的路径
+				this.load.image('cove', 'assets/icecove.png')
+				this.load.image('float', 'assets/blocks.png')
+				this.load.image('floor', 'assets/ground.png')
+				this.load.image('star', 'assets/star.png')
+				this.load.image('bomb', 'assets/bomb.png')
+				//加载精灵表单，第三个参数定义了表单中每个动画帧的宽高
+				this.load.spritesheet('spiderman', 'assets/spiderman.png', {
+					frameWidth: 100,
+					frameHeight: 140
+				})
+				//加载子弹精灵表单
+				this.load.spritesheet('bullet', 'assets/bullet.png', {
+					frameWidth: 50,
+					frameHeight: 36
+				})
+				//加载骷髅士兵精灵表单
+				this.load.spritesheet('skeleton', 'assets/skeleton.png', {
+					frameWidth: 100,
+					frameHeight: 100
+				})
+
+			}
+			/******************************************************
+			 *	用于在场景中创建游戏对象，动画，事件监听的create函数
+			 ******************************************************/
+			function create() {
+
+				//初始化动画
+				initAnimation(this)
+				//将映射为'cove'的图片添加到场景中，phaser中图片资源的(0,0)点位于中心点，如果要让图片盖住场景，需要移动图片
+				this.add.image(700, 300, 'cove').setScale(2)
+				//设置分数显示
+				scoreText = this.add.text(160, 20, 'score: 0', {
+					fontFamily: 'Comic Sans MS',
+					fontSize: '48px',
+					fill: '#FFF'
+				})
+				lifeText = this.add.text(1260, 30, '❤❤❤', {
+					fontFamily: 'Comic Sans MS',
+					fontSize: '48px',
+					fill: '#F00'
+				})
+
+				//添加静态游戏对象组群，静态的对象跟普通对象发生碰撞不会有能量交换
+				platforms = this.physics.add.staticGroup()
+				//向静态游戏组群中添加成员
+				//添加两块连续的地面
+				platforms.create(400, 720, 'floor')
+				platforms.create(1000, 720, 'floor')
+				//添加及四块悬空的长砖，调用setScale()函数将图片放大2倍
+				platforms.create(650, 510, 'float').setScale(2).refreshBody()
+				platforms.create(300, 310, 'float').setScale(2).refreshBody()
+				platforms.create(850, 220, 'float').setScale(2).refreshBody()
+				platforms.create(1250, 400, 'float').setScale(2).refreshBody()
+
+				/******************************
+				 *   以精灵的方式创建玩家对象 
+				 ******************************/
+				player = this.physics.add.sprite(100, 450, 'spiderman')
+				//设置玩家与场景边界会碰撞，阻止玩家对象越过场景四边
+				player.setCollideWorldBounds(true)
+				//在视口外创建子弹
+				bullet = this.physics.add.sprite(-100, 0, 'bullet')
+				//设置子弹无重力
+				bullet.body.setAllowGravity(false)
+
+				/******************************************************
+				 *   以group的方式创建star
+				 *   区别于staticGroup, group中的对象碰撞会有能量交换
+				 *****************************************************/
+				stars = this.physics.add.group();
+				stars.create(235, 100, 'star')
+				stars.create(360, 100, 'star')
+				stars.create(590, 300, 'star')
+				stars.create(710, 330, 'star')
+				stars.create(785, 50, 'star')
+				stars.create(910, 50, 'star')
+				stars.create(1185, 200, 'star')
+				stars.create(1310, 200, 'star')
+				
+				
+				
+				
+				
+
+				//遍历stars这个group里面的所有成员，为每个成员star设置0.4-0.8之间的随机反弹属性
+				stars.children.iterate(function(child) {
+					child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8))
+				});
+				//给所有的star 添加与platfroms的碰撞
+				this.physics.add.collider(stars, platforms);
+				//添加player与star的边缘重叠检测，一旦检测到重叠，立刻调用collectStar函数
+				this.physics.add.overlap(player, stars, collectStar, null, this);
+
+				/**************************************
+				 *         创建炸弹 group
+				 *************************************/
+				bombs = this.physics.add.group(); //只创建组，炸弹对象的创建在第一轮星星收集完后发生
+				//设置炸弹与platform会碰撞
+				this.physics.add.collider(bombs, platforms);
+				//当炸弹跟player碰撞时，立刻调用hitBomb函数
+				this.physics.add.collider(player, bombs, hitBomb, null, this);
+
+				/**************************************
+				 *     创建骷髅士兵怪物group
+				 *************************************/
+
+				monsters = this.physics.add.group();
+				monsters.create(220, 200, 'skeleton')
+				monsters.create(650, 330, 'skeleton')
+				monsters.create(930, 50, 'skeleton')
+				monsters.create(1200, 200, 'skeleton')
+				monsters.children.iterate(function(child) {
+					child.setVelocityX(-20)
+					child.anims.play('mleft')
+				});
+
+				/**************************************
+				 *     定义输入设备为键盘按键输入
+				 *************************************/
+				//createCursorKeys()函数将创建 left,right,up,down 四方向组按键
+				cursors = this.input.keyboard.createCursorKeys()
+				//添加空格键到控制键中
+				keySpace = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
+
+
+				/**************************************
+				 *     设置游戏对象之间的碰撞检测
+				 *************************************/
+				//设置玩家与平台的不穿透性
+				this.physics.add.collider(player, platforms);
+				//设置怪物与静物的碰撞属性，并实现自动折返
+				this.physics.add.collider(monsters, platforms, function(monster, platform) {
+					if (monster.body.velocity.x < 0 && monster.x - monster.body.width / 2 < platform.x - platform.body.width / 2) {
+						monster.setVelocity(20)
+						monster.play('mright')
+					}
+					if (monster.body.velocity.x > 0 && monster.x + monster.body.width / 2 > platform.x + platform.body.width / 2) {
+						monster.setVelocity(-20)
+						monster.play('mleft')
+					}
+				})
+				//设置玩家与怪物碰撞后的事件
+				this.physics.add.collider(player, monsters, hitMonster, null, this)
+				//设置子弹与怪物碰撞后的事件
+				this.physics.add.collider(bullet, monsters, shotMonster, null, this)
+
+			}
+
+			/**************************************
+			 *     控制游戏循环中逻辑事件的函数
+			 *************************************/
+			function update() {
+				//只要游戏还没有结束
+				if (!gameOver) {
+					//如果监听到键盘的左箭头被按下
+					if (cursors.left.isDown) {
+						//向左移动玩家对象
+						direction = "left"
+						player.setVelocityX(-160);
+						//移动过程中使用我们创建的名字为'left'的动画
+						if (player.body.touching.down) {
+							player.anims.play('left', true);
+						}
+					}
+					//向右移动玩家对象
+					else if (cursors.right.isDown) {
+						direction = "right"
+						player.setVelocityX(160);
+						//移动过程中使用我们创建的名字为'right'的动画
+						if (player.body.touching.down) {
+							player.anims.play('right', true);
+						}
+					}
+					//如果键盘的上箭头被按下
+					else if (cursors.up.isDown) {
+						if (player.body.touching.down) {
+							//让游戏对象向上移动,向上移动Y为负值
+							player.setVelocityY(-350);
+							//根据玩家当前行进的方向选择跳起的方向
+							player.anims.play(direction == 'right' ? 'jumpright' : 'jumpleft');
+						}
+					} else if (keySpace.isDown) { //如果空格键被按下了
+						fire() //调用发射函数
+					}
+					//没有任何键按下的情况
+					else {
+						//如果不在地面上
+						if (!player.body.touching.down) {
+							//播放跳的动画
+							player.anims.play(direction == "left" ? 'jumpleft' : 'jumpright')
+							//如果跳到最高点后开始下落了
+							if (player.body.velocity.y >= 0) {
+								//播放下落的动画
+								player.anims.play(direction == 'left' ? 'dropleft' : 'dropright');
+							}
+						} else {
+							//如果在地上，播放站立的动画
+							player.setVelocity(0)
+							player.anims.play(direction == 'right' || undefined ? 'rstand' : 'lstand');
+						}
+					}
+					//如果游戏结束了
+				} else {
+					player.setVelocity(0) //设置玩家速度为0
+					player.anims.play('over') //播放挂掉的动画
+				}
+			}
+			/***************************************
+			 *     定义player收集star的逻辑的函数
+			 ***************************************/
+			function collectStar(player, star) {
+				//star 消失
+				star.disableBody(true, true);
+				//将score 变量加10
+				score += 10
+				//刷新分数文本
+				scoreText.setText("score:" + score)
+				//如果stars组中所有的star都消失了
+				if (stars.countActive(true) === 0) {
+					//对组内的所有成员做如下事情
+					stars.children.iterate(function(child) {
+						//让成员在初始位置再次显示
+						child.enableBody(true, child.x, 150, true, true);
+
+					});
+					//变量x用于存储炸弹的初始位置，如果player在左半屏，炸弹则在右半800屏，反之亦然
+					var x = (player.x < 800) ? Phaser.Math.Between(800, 1600) : Phaser.Math.Between(0, 800);
+					//创建炸弹
+					var bomb = bombs.create(x, 16, 'bomb'); //bomb是炸弹对象，bombs是炸弹对象所在的组
+					//设置炸弹的反弹值
+					bomb.setBounce(1);
+					//设置炸弹四边限制
+					bomb.setCollideWorldBounds(true);
+					//随机初始斜射速度
+					bomb.setVelocity(Phaser.Math.Between(-200, 200), 20);
+
+				}
+			}
+
+			/***************************************
+			 *     定义player触雷的逻辑的函数
+			 ***************************************/
+			function hitBomb(player,bomb ) {
+				
+				if (life === 3) {
+				life =2
+					lifeText.setText('❤❤')
+					bomb.disableBody(true, true);
+					console.log(2);
+					
+				} else if (life  === 2) {
+				life = 1
+					lifeText.setText('❤')
+					bomb.disableBody(true, true);
+					console.log(1);
+				} else {
+					//游戏结束
+					gameOver = true
+					//移除场景中的物理属性
+					this.physics.pause()
+					//设置player颜色
+					player.setTint(0xff0000)
+				}
+				}
+				/***************************************
+				 *     定义player碰到怪物的逻辑的函数
+				 ***************************************/
+				function hitMonster(player, monster) {
+				
+					if (life === 3) {
+					life =2
+						lifeText.setText('❤❤')
+						monster.disableBody(true, true);
+						console.log(2);
+					} else if (life  === 2) {
+					life = 1
+						lifeText.setText('❤')
+						monster.disableBody(true, true);
+						console.log(1);
+					} else {
+						//游戏结束
+						gameOver = true
+						//移除场景中的物理属性
+						this.physics.pause()
+						//设置player颜色
+						player.setTint(0xff0000)
+					}
+					}
+					/***************************************
+					 *     定义player射发子弹的逻辑的函数
+					 ***************************************/
+					function fire() {
+						//设置子弹视口外可见
+						bullet.enableBody(true, -100, 0, true, true);
+						//玩家射击时停止运动
+						player.setVelocityX(0)
+						if (direction == "right") { //右射击
+							player.anims.play('fireright')
+							bullet.body.x = player.body.x + 100 //子弹出现的x坐标
+							bullet.body.y = player.body.y + 80 //子弹出现的y坐标
+							bullet.setVelocityX(1400) //子弹速度
+							bullet.anims.play('bulletright')
+						} else {
+							player.anims.play('fireleft') //左射击
+							bullet.body.x = player.body.x - 80
+							bullet.body.y = player.body.y + 30//bug出现的地方，y参数未设置
+							bullet.setVelocityX(-1400)
+							bullet.anims.play('bulletleft')
+						}
+
+					}
+
+					/***************************************
+					 *     定义子弹击中怪物的逻辑的函数
+					 ***************************************/
+					function shotMonster(bullet, monster) {
+						bullet.disableBody(true, true)
+						monster.disableBody(true, true)
+						if (monsters.countActive(true) === 0) {
+
+							monsters = this.physics.add.group();
+							monsters.create(220, 200, 'skeleton')
+							monsters.create(650, 330, 'skeleton')
+							monsters.create(930, 50, 'skeleton')
+							monsters.create(1200, 200, 'skeleton')
+							monsters.children.iterate(function(child) {
+								child.setVelocityX(-20)
+								child.anims.play('mleft')
+							});
+							this.physics.add.collider(monsters, platforms, function(monster, platform) {
+								if (monster.body.velocity.x < 0 && monster.x - monster.body.width / 2 < platform.x - platform.body.width / 2) {
+									monster.setVelocity(20)
+									monster.play('mright')
+								}
+								if (monster.body.velocity.x > 0 && monster.x + monster.body.width / 2 > platform.x + platform.body.width / 2) {
+									monster.setVelocity(-20)
+									monster.play('mleft')
+								}
+							})
+							//设置玩家与怪物碰撞后的事件
+							this.physics.add.collider(player, monsters, hitMonster, null, this)
+							//设置子弹与怪物碰撞后的事件
+							this.physics.add.collider(bullet, monsters, shotMonster, null, this)
+
+
+
+
+						}
+					}
+					/****************************************
+					 *     定义游戏中用到的所有的动画的函数
+					 ****************************************/
+					function initAnimation(scene) {
+						// 创建左走动画
+						scene.anims.create({
+							//给动画定义的名字
+							key: 'left',
+							//动画的帧素材的源
+							frames: scene.anims.generateFrameNumbers('spiderman', {
+								start: 24,
+								end: 13
+							}),
+							//帧刷新率
+							frameRate: 10,
+							//循环次数，-1为无限循环
+							repeat: -1
+						});
+						// 创建左站动画
+						scene.anims.create({
+							key: 'lstand',
+							frames: [{
+								key: 'spiderman',
+								frame: 12
+							}],
+							frameRate: 20
+						});
+						// 创建右站动画
+						scene.anims.create({
+							key: 'rstand',
+							frames: [{
+								key: 'spiderman',
+								frame: 34
+							}],
+							frameRate: 20
+						});
+						// 创建右走动画
+						scene.anims.create({
+							key: 'right',
+							frames: scene.anims.generateFrameNumbers('spiderman', {
+								start: 0,
+								end: 11
+							}),
+							frameRate: 10,
+							repeat: -1
+						});
+						// 创建左跳动画
+						scene.anims.create({
+							key: 'jumpleft',
+							frames: [{
+								key: 'spiderman',
+								frame: 32
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 创建右跳动画
+						scene.anims.create({
+							key: 'jumpright',
+							frames: [{
+								key: 'spiderman',
+								frame: 25
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 创建右下落动画
+						scene.anims.create({
+							key: 'dropright',
+							frames: [{
+								key: 'spiderman',
+								frame: 31
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 创建左下落动画
+						scene.anims.create({
+							key: 'dropleft',
+							frames: [{
+								key: 'spiderman',
+								frame: 33
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 创建左射击动画
+						scene.anims.create({
+							key: 'fireleft',
+							frames: [{
+								key: 'spiderman',
+								frame: 36
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 创建右射击动画
+						scene.anims.create({
+							key: 'fireright',
+							frames: [{
+								key: 'spiderman',
+								frame: 35
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 创建子弹左行动画
+						scene.anims.create({
+							key: 'bulletleft',
+							frames: [{
+								key: 'spiderman',
+								frame: 38
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 创建挂掉动画
+						scene.anims.create({
+							key: 'over',
+							frames: [{
+								key: 'spiderman',
+								frame: 39
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 怪物左移动动画
+						scene.anims.create({
+							key: 'mleft',
+							frames: scene.anims.generateFrameNumbers('skeleton', {
+								start: 0,
+								end: 3
+							}),
+							frameRate: 5,
+							repeat: -1
+						});
+						// 怪物右移动动画
+						scene.anims.create({
+							key: 'mright',
+							frames: scene.anims.generateFrameNumbers('skeleton', {
+								start: 4,
+								end: 7
+							}),
+							frameRate: 10,
+							repeat: -1
+						});
+						// 子弹右行动画
+						scene.anims.create({
+							key: 'bulletright',
+							frames: [{
+								key: 'bullet',
+								frame: 0
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+						// 子弹左行动画
+						scene.anims.create({
+							key: 'bulletleft',
+							frames: [{
+								key: 'bullet',
+								frame: 1
+							}],
+							frameRate: 10,
+							repeat: -1
+						});
+					}
+		</script>
+	</body>
+
+</html>
